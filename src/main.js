@@ -57,6 +57,10 @@ let chaosTimer;
 let searchTimer;
 let searchRequest = 0;
 let cityMap;
+let cityAttack;
+let cityAttackRenderer;
+let cityAttackScene;
+let cityAttackCamera;
 
 PROJECTILES.forEach((p, index) => {
   const button = document.createElement('button');
@@ -124,17 +128,24 @@ function openCityMap(lat, lng, placeName) {
   cityMapStage.classList.add('active');
   if (!cityMap) {
     cityMap = new MapLibreMap({ container: cityMapStage, style: 'https://tiles.openfreemap.org/styles/dark', center: [lng, lat], zoom: 18.8, pitch: 45, bearing: -18, attributionControl: true });
-    cityMap.on('load', () => add3DBuildings(cityMap));
+    cityMap.on('load', () => { addSatelliteImagery(cityMap); add3DBuildings(cityMap); ensureCityAttackRenderer(); });
     cityMap.on('click', (event) => {
       const target = event.lngLat;
       const label = `MAP LOCK // ${target.lat.toFixed(5)}°, ${target.lng.toFixed(5)}°`;
-      returnToOrbit();
-      setTarget(target.lat, target.lng, true, label);
+      const lockedTarget = { lat: target.lat, lng: target.lng, placeName: label };
+      setTarget(lockedTarget.lat, lockedTarget.lng, false, lockedTarget.placeName);
+      launchCityProjectile(selected.projectile, lockedTarget);
     });
   } else {
     cityMap.resize();
     cityMap.flyTo({ center: [lng, lat], zoom: 18.8, pitch: 45, bearing: -18, essential: true, duration: 1400 });
   }
+}
+
+function addSatelliteImagery(map) {
+  if (map.getSource('orbital-satellite')) return;
+  map.addSource('orbital-satellite', { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 19, attribution: 'Tiles © Esri' });
+  map.addLayer({ id: 'orbital-satellite', type: 'raster', source: 'orbital-satellite', paint: { 'raster-opacity': 0.92 } });
 }
 
 function add3DBuildings(map) {
@@ -146,6 +157,56 @@ function returnToOrbit() {
   cityMapStage.classList.remove('active');
   $('city-mode').classList.remove('active');
   if (cityMap) cityMap.resize();
+}
+
+function ensureCityAttackRenderer() {
+  if (!cityMapStage.clientWidth) return;
+  if (!cityAttackRenderer) {
+    cityAttackRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    cityAttackRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+    cityAttackRenderer.setClearColor(0x000000, 0);
+    cityAttackRenderer.domElement.className = 'city-attack-canvas';
+    cityMapStage.appendChild(cityAttackRenderer.domElement);
+    cityAttackScene = new THREE.Scene();
+    cityAttackScene.add(new THREE.AmbientLight(0xffffff, 1.5));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.4); keyLight.position.set(120, -120, 240); cityAttackScene.add(keyLight);
+    cityAttackCamera = new THREE.OrthographicCamera(0, cityMapStage.clientWidth, 0, cityMapStage.clientHeight, -1000, 1000);
+  }
+  const width = cityMapStage.clientWidth; const height = cityMapStage.clientHeight;
+  cityAttackRenderer.setSize(width, height, false); cityAttackCamera.right = width; cityAttackCamera.bottom = height; cityAttackCamera.updateProjectionMatrix();
+}
+
+function launchCityProjectile(projectile, target) {
+  ensureAudio(); ensureCityAttackRenderer();
+  stats.launched += 1; $('launch-count').textContent = stats.launched;
+  const endPoint = cityMap.project([target.lng, target.lat]);
+  const end = new THREE.Vector3(endPoint.x, endPoint.y, 0);
+  const start = new THREE.Vector3(end.x + (Math.random() - .5) * 120, -150, 0);
+  const mid = new THREE.Vector3((start.x + end.x) / 2 + (Math.random() - .5) * 160, end.y - 230, 0);
+  const model = createPayloadModel(projectile); model.scale.multiplyScalar(2.25); cityAttackScene.add(model);
+  const trailMaterial = new THREE.LineBasicMaterial({ color: projectile.color, transparent: true, opacity: .75 });
+  const trailGeometry = new THREE.BufferGeometry().setFromPoints([start.clone(), start.clone()]); const trail = new THREE.Line(trailGeometry, trailMaterial); cityAttackScene.add(trail);
+  cityAttack = { model, trail, trailGeometry, trailMaterial, start, mid, end, target, projectile, t: 0, duration: Math.max(.8, 1.55 / projectile.speed) };
+  playSound(projectile.id === 'chicken' ? 'squeak' : 'launch');
+  addActivity(`${projectile.emoji} ${projectile.name} launched toward ${target.placeName}`);
+}
+
+function tickCityAttack(delta) {
+  if (!cityAttack) return;
+  const item = cityAttack; item.t += delta / item.duration; const t = Math.min(item.t, 1); const eased = t * t * (3 - 2 * t);
+  const a = item.start.clone().multiplyScalar((1 - eased) ** 2); const b = item.mid.clone().multiplyScalar(2 * (1 - eased) * eased); const c = item.end.clone().multiplyScalar(eased ** 2); const pos = a.add(b).add(c);
+  item.model.position.copy(pos); item.model.rotation.x += delta * 3.2; item.model.rotation.y += delta * 4.1; item.trailGeometry.setFromPoints([item.start.clone().lerp(pos, .86), pos]);
+  if (t >= 1) finishCityAttack(item);
+  cityAttackRenderer.render(cityAttackScene, cityAttackCamera);
+}
+
+function finishCityAttack(item) {
+  cityAttackScene.remove(item.model, item.trail); disposeObject3D(item.model); item.trailGeometry.dispose(); item.trailMaterial.dispose(); cityAttack = null;
+  spawnCityImpact(item.end.x, item.end.y, item.projectile.color, item.projectile.impact); recordImpact(item.target, item.projectile, true);
+}
+
+function spawnCityImpact(x, y, color, label) {
+  const impact = document.createElement('div'); impact.className = 'city-impact'; impact.style.left = `${x}px`; impact.style.top = `${y}px`; impact.style.setProperty('--impact-color', color); impact.innerHTML = `<i></i><b>${label}</b>`; cityMapStage.appendChild(impact); setTimeout(() => impact.remove(), 1050);
 }
 
 function positionReticle(lat, lng) {
@@ -229,15 +290,20 @@ function tick(delta) {
     if (selected.follow) globe.camera().lookAt(pos);
     if (t >= 1) { impact(item); active.splice(active.indexOf(item), 1); }
   });
+  if (cityAttackRenderer) tickCityAttack(delta);
 }
 
 function impact(item) {
   const { target, projectile } = item;
   globe.scene().remove(item.group, item.trail); disposeObject3D(item.group); item.trailGeometry.dispose(); item.trailMaterial.dispose();
+  recordImpact(target, projectile, false);
+}
+
+function recordImpact(target, projectile, cityImpact) {
   stats.impacts += 1; $('impact-count').textContent = stats.impacts;
   stats.craters.push({ lat: target.lat, lng: target.lng, id: `${Date.now()}-${Math.random()}` }); stats.craters = stats.craters.slice(-40); refreshMarkers();
-  globe.ringsData([{ lat: target.lat, lng: target.lng, id: Date.now() }, ...globe.ringsData()].slice(0, 20));
-  spawnParticles(target, projectile.color); playSound(projectile.impact === 'SQUEAK' ? 'squeak' : 'boom');
+  if (!cityImpact) { globe.ringsData([{ lat: target.lat, lng: target.lng, id: Date.now() }, ...globe.ringsData()].slice(0, 20)); spawnParticles(target, projectile.color); }
+  playSound(projectile.impact === 'SQUEAK' ? 'squeak' : 'boom');
   const city = nearestCity(target.lat, target.lng); const destination = target.placeName || city.name || 'the open sea'; const line = `${projectile.emoji} ${projectile.name} destroyed absolutely nothing in ${destination}`; addActivity(line); trackTarget(destination); showToast(`${projectile.impact} // ${destination}`);
 }
 
