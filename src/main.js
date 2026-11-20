@@ -31,7 +31,7 @@ app.innerHTML = `
     </header>
     <section class="target-card glass-panel"><div class="eyebrow">TARGETING SOLUTION</div><div class="coordinates" id="coords">Awaiting a target<span>click the globe to begin</span></div><div class="target-name" id="target-name">NO COORDINATES LOCKED</div><div class="target-bar"><i id="target-bar-fill"></i></div></section>
     <aside class="intel-panel glass-panel"><div class="panel-heading"><span>FIELD NOTES</span><span class="tiny-status">RECENT ACTIVITY</span></div><div id="activity-feed" class="activity-feed"><div class="empty-feed">No mischief logged yet.<br><span>Be the first to do something silly.</span></div></div><div class="leaderboard"><div class="panel-heading"><span>TOP TARGETS</span><span class="tiny-status">SESSION</span></div><div id="leaderboard-list"><div class="empty-feed">Leaderboard is waiting for chaos.</div></div></div></aside>
-    <div class="search-wrap glass-panel"><input id="search-input" placeholder="Search a place…" aria-label="Search a place"><button id="search-btn">LOCATE</button><div id="search-result"></div></div>
+    <div class="search-wrap glass-panel"><input id="search-input" placeholder="Search an address or place…" aria-label="Search an address or place" autocomplete="off" aria-autocomplete="list"><button id="search-btn">LOCATE</button><div id="search-suggestions" class="search-suggestions" role="listbox"></div><div id="search-result"></div></div>
     <div class="controls"><button class="control-btn" id="mute-btn">◒ MUTE</button><button class="control-btn" id="follow-btn">⌁ FOLLOW CAM</button><button class="control-btn" id="reset-btn">◎ RESET</button><button class="control-btn" id="origin-btn">↟ ORIGIN: <b>ORBITAL</b></button><button class="control-btn danger" id="clear-btn">× CLEAR ALL</button></div>
     <div class="projectile-dock"><div class="dock-label">SELECT PAYLOAD <span>PRESS 1—8</span></div><div class="projectile-grid" id="projectile-grid"></div><button class="chaos-btn" id="chaos-btn"><span>⚡</span><b>CHAOS MODE</b><small>10 SEC RAPID FIRE</small></button></div>
     <div class="reticle" id="reticle"><div class="reticle-ring"></div><span id="reticle-label">LOCK</span></div>
@@ -41,10 +41,12 @@ app.innerHTML = `
 const $ = (id) => document.getElementById(id);
 const stage = $('globe-stage');
 const selected = { projectile: PROJECTILES[0], target: null, follow: false, muted: false, origin: 'orbital' };
-const stats = { launched: 0, impacts: 0, activity: [], targets: new Map() };
+const stats = { launched: 0, impacts: 0, activity: [], targets: new Map(), craters: [] };
 const active = [];
 let audioCtx;
 let chaosTimer;
+let searchTimer;
+let searchRequest = 0;
 
 PROJECTILES.forEach((p, index) => {
   const button = document.createElement('button');
@@ -69,7 +71,7 @@ const globe = Globe()(stage)
   .ringPropagationSpeed(2.5)
   .ringRepeatPeriod(0)
   .pointsData([])
-  .pointLat('lat').pointLng('lng').pointColor(() => '#ff713b').pointAltitude(0.012).pointRadius(0.22)
+  .pointLat('lat').pointLng('lng').pointColor((point) => point.selected ? '#6be8ff' : '#ff713b').pointAltitude((point) => point.selected ? 0.028 : 0.012).pointRadius((point) => point.selected ? 0.34 : 0.22)
   .onGlobeClick(({ lat, lng }) => setTarget(lat, lng, true));
 const vectorCoords = (lat, lng, altitude) => {
   const point = globe.getCoords(lat, lng, altitude);
@@ -89,12 +91,24 @@ function selectProjectile(id) {
   showToast(`${selected.projectile.emoji} ${selected.projectile.name.toUpperCase()} ARMED`);
 }
 
-function setTarget(lat, lng, launch = false) {
-  selected.target = { lat, lng };
+function setTarget(lat, lng, launch = false, placeName = '') {
+  selected.target = { lat, lng, placeName };
   const city = nearestCity(lat, lng);
   $('coords').innerHTML = `${lat.toFixed(3)}° ${lat >= 0 ? 'N' : 'S'} &nbsp; ${Math.abs(lng).toFixed(3)}° ${lng >= 0 ? 'E' : 'W'}<span>targeting lock acquired</span>`;
-  $('target-name').textContent = city.name ? `${city.name.toUpperCase()} // ${selected.projectile.name.toUpperCase()}` : 'UNKNOWN SECTOR // RAW COORDINATES';
+  const resolvedName = placeName || city.name || 'UNKNOWN SECTOR // RAW COORDINATES';
+  $('target-name').textContent = `${resolvedName.toUpperCase()} // ${selected.projectile.name.toUpperCase()}`;
   $('target-bar-fill').style.width = '100%';
+  refreshMarkers();
+  if (placeName) {
+    globe.controls().autoRotate = false;
+    globe.pointOfView({ lat, lng, altitude: 0.52 }, 1100);
+  }
+  positionReticle(lat, lng);
+  if (placeName) setTimeout(() => positionReticle(lat, lng), 1150);
+  if (launch) launchProjectile(selected.projectile, { lat, lng, placeName });
+}
+
+function positionReticle(lat, lng) {
   const pos = vectorCoords(lat, lng, 0.045);
   const projected = pos.clone().project(globe.camera());
   const rect = stage.getBoundingClientRect();
@@ -103,7 +117,6 @@ function setTarget(lat, lng, launch = false) {
   $('reticle').style.left = `${x}px`; $('reticle').style.top = `${y}px`; $('reticle-label').textContent = `${lat.toFixed(1)}°, ${lng.toFixed(1)}°`;
   $('reticle').classList.add('visible', 'locking');
   setTimeout(() => $('reticle').classList.remove('locking'), 360);
-  if (launch) launchProjectile(selected.projectile, { lat, lng });
 }
 
 function launchProjectile(projectile, target) {
@@ -120,7 +133,7 @@ function launchProjectile(projectile, target) {
   const trail = new THREE.Line(trailGeometry, trailMaterial); globe.scene().add(trail);
   active.push({ group, sprite, trail, trailGeometry, trailMaterial, start, mid, end, target, projectile, t: 0, duration: Math.max(0.9, 1.75 / projectile.speed) });
   playSound(projectile.id === 'chicken' ? 'squeak' : 'launch');
-  addActivity(`${projectile.emoji} ${projectile.name} launched toward ${nearestCity(target.lat, target.lng).name || 'a mysterious ocean'}`);
+  addActivity(`${projectile.emoji} ${projectile.name} launched toward ${target.placeName || nearestCity(target.lat, target.lng).name || 'a mysterious ocean'}`);
 }
 
 function getOrigin(projectile) {
@@ -152,10 +165,10 @@ function impact(item) {
   const { target, projectile } = item;
   globe.scene().remove(item.group, item.trail); item.trailGeometry.dispose(); item.trailMaterial.dispose(); item.sprite.material.map.dispose(); item.sprite.material.dispose();
   stats.impacts += 1; $('impact-count').textContent = stats.impacts;
-  const crater = { lat: target.lat, lng: target.lng, id: `${Date.now()}-${Math.random()}` }; globe.pointsData([...globe.pointsData(), crater].slice(-40));
+  stats.craters.push({ lat: target.lat, lng: target.lng, id: `${Date.now()}-${Math.random()}` }); stats.craters = stats.craters.slice(-40); refreshMarkers();
   globe.ringsData([{ lat: target.lat, lng: target.lng, id: Date.now() }, ...globe.ringsData()].slice(0, 20));
   spawnParticles(target, projectile.color); playSound(projectile.impact === 'SQUEAK' ? 'squeak' : 'boom');
-  const city = nearestCity(target.lat, target.lng); const line = `${projectile.emoji} ${projectile.name} destroyed absolutely nothing in ${city.name || 'the open sea'}`; addActivity(line); trackTarget(city.name || 'Uncharted coordinates'); showToast(`${projectile.impact} // ${city.name || 'TARGET ZONE'}`);
+  const city = nearestCity(target.lat, target.lng); const destination = target.placeName || city.name || 'the open sea'; const line = `${projectile.emoji} ${projectile.name} destroyed absolutely nothing in ${destination}`; addActivity(line); trackTarget(destination); showToast(`${projectile.impact} // ${destination}`);
 }
 
 function spawnParticles(target, color) {
@@ -166,6 +179,7 @@ function spawnParticles(target, color) {
 }
 
 function nearestCity(lat, lng) { let closest = { name: null, distance: Infinity }; cities.forEach(([name, a, b]) => { const distance = Math.hypot(lat - a, lng - b); if (distance < closest.distance) closest = { name, distance }; }); return closest.distance < 12 ? closest : { name: null, distance: closest.distance }; }
+function refreshMarkers() { const targetMarker = selected.target ? [{ lat: selected.target.lat, lng: selected.target.lng, selected: true }] : []; globe.pointsData([...targetMarker, ...stats.craters]); }
 function addActivity(text) { stats.activity.unshift({ text, time: new Date() }); stats.activity = stats.activity.slice(0, 8); $('activity-feed').innerHTML = stats.activity.map((a) => `<div class="activity-item"><span>${a.text}</span><time>${a.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>`).join(''); }
 function trackTarget(name) { stats.targets.set(name, (stats.targets.get(name) || 0) + 1); const rows = [...stats.targets].sort((a, b) => b[1] - a[1]).slice(0, 4); $('leaderboard-list').innerHTML = rows.map(([city, count], i) => `<div class="leader-row"><span>${String(i + 1).padStart(2, '0')} ${city}</span><b>${count}</b></div>`).join(''); }
 function showToast(text) { const toast = $('toast'); toast.textContent = text; toast.classList.add('show'); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove('show'), 1800); }
@@ -176,11 +190,17 @@ $('mute-btn').onclick = () => { selected.muted = !selected.muted; $('mute-btn').
 $('follow-btn').onclick = () => { selected.follow = !selected.follow; $('follow-btn').classList.toggle('active', selected.follow); };
 $('reset-btn').onclick = () => { globe.pointOfView({ lat: 22, lng: 12, altitude: 2.35 }, 900); globe.controls().autoRotate = true; };
 $('origin-btn').onclick = () => { const options = ['orbital', 'previous', 'random']; selected.origin = options[(options.indexOf(selected.origin) + 1) % options.length]; $('origin-btn').innerHTML = `↟ ORIGIN: <b>${selected.origin.toUpperCase()}</b>`; };
-$('clear-btn').onclick = () => { active.splice(0).forEach((item) => { globe.scene().remove(item.group, item.trail); item.trailGeometry.dispose(); item.trailMaterial.dispose(); }); globe.ringsData([]); globe.pointsData([]); showToast('FIELD CLEARED // NO MISCHIEF REMAINS'); };
+$('clear-btn').onclick = () => { active.splice(0).forEach((item) => { globe.scene().remove(item.group, item.trail); item.trailGeometry.dispose(); item.trailMaterial.dispose(); }); globe.ringsData([]); stats.craters = []; refreshMarkers(); showToast('FIELD CLEARED // NO MISCHIEF REMAINS'); };
 $('chaos-btn').onclick = () => { if (chaosTimer) return; let remaining = 10; $('chaos-status').textContent = `${remaining}s`; chaosTimer = setInterval(() => { remaining -= 1; $('chaos-status').textContent = remaining ? `${remaining}s` : 'STANDBY'; if (remaining <= 0) { clearInterval(chaosTimer); chaosTimer = null; showToast('CHAOS COMPLETE // VERY LITTLE WAS LEARNED'); return; } const p = PROJECTILES[Math.floor(Math.random() * PROJECTILES.length)]; const lat = Math.random() * 140 - 70; const lng = Math.random() * 360 - 180; launchProjectile(p, { lat, lng }); }, 900); };
-$('search-btn').onclick = searchPlace;
-$('search-input').onkeydown = (event) => { if (event.key === 'Enter') searchPlace(); };
-async function searchPlace() { const query = $('search-input').value.trim(); if (!query) return; $('search-result').textContent = 'LOCATING…'; try { const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`); const results = await response.json(); if (!results.length) throw new Error('not found'); const hit = results[0]; const lat = Number(hit.lat); const lng = Number(hit.lon); globe.pointOfView({ lat, lng, altitude: 1.5 }, 900); $('search-result').textContent = hit.display_name.split(',').slice(0, 2).join(', '); setTarget(lat, lng, false); } catch { $('search-result').textContent = 'NO SIGNAL — TRY ANOTHER PLACE'; } }
+$('search-btn').onclick = () => searchPlace($('search-input').value.trim());
+$('search-input').onkeydown = (event) => { if (event.key === 'Enter') searchPlace($('search-input').value.trim()); if (event.key === 'Escape') hideSuggestions(); };
+$('search-input').oninput = () => { const query = $('search-input').value.trim(); clearTimeout(searchTimer); if (query.length < 3) return hideSuggestions(); searchTimer = setTimeout(() => fetchSuggestions(query), 260); };
+async function fetchSuggestions(query) { const requestId = ++searchRequest; renderSearchStatus('SEARCHING…'); try { const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&dedupe=1&accept-language=en&q=${encodeURIComponent(query)}`); const results = await response.json(); if (requestId !== searchRequest) return; renderSuggestions(results); } catch { if (requestId === searchRequest) renderSearchStatus('NO SIGNAL — TRY ANOTHER PLACE'); } }
+function renderSuggestions(results) { const suggestions = $('search-suggestions'); if (!results.length) { suggestions.innerHTML = `<div class="suggestion-empty">NO MATCHES — TRY A STREET, CITY, OR LANDMARK</div>`; suggestions.classList.add('open'); return; } suggestions.innerHTML = results.map((hit, index) => `<button class="suggestion" data-result-index="${index}" role="option"><b>${hit.display_name.split(',').slice(0, 2).join(', ')}</b><small>${hit.type || 'place'} · ${Number(hit.lat).toFixed(3)}°, ${Number(hit.lon).toFixed(3)}°</small></button>`).join(''); suggestions.classList.add('open'); suggestions.querySelectorAll('.suggestion').forEach((button) => { button.onclick = () => focusSearchResult(results[Number(button.dataset.resultIndex)]); }); $('search-result').textContent = ''; }
+function focusSearchResult(hit) { const label = hit.display_name.split(',').slice(0, 3).join(', '); $('search-input').value = label; hideSuggestions(); $('search-result').textContent = '3D LOCK // EXACT COORDINATES'; setTarget(Number(hit.lat), Number(hit.lon), false, label); showToast(`LOCATION LOCKED // ${label.toUpperCase()}`); }
+function hideSuggestions() { $('search-suggestions').classList.remove('open'); }
+function renderSearchStatus(text) { $('search-result').textContent = text; hideSuggestions(); }
+async function searchPlace(query) { if (!query) return; renderSearchStatus('LOCATING…'); try { const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&dedupe=1&accept-language=en&q=${encodeURIComponent(query)}`); const results = await response.json(); if (!results.length) throw new Error('not found'); focusSearchResult(results[0]); } catch { renderSearchStatus('NO SIGNAL — TRY ANOTHER PLACE'); } }
 
 window.addEventListener('keydown', (event) => { const p = PROJECTILES.find((item) => item.hotkey === event.key); if (p) selectProjectile(p.id); });
 let previous = performance.now();
