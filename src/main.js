@@ -1,11 +1,8 @@
 import Globe from 'globe.gl';
 import * as THREE from 'three';
-import { Map, setWorkerUrl } from 'maplibre-gl';
-import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import { Map } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './style.css';
-
-setWorkerUrl(maplibreWorker);
 
 const PROJECTILES = [
   { id: 'missile', name: 'Classic Missile', emoji: '🚀', hotkey: '1', speed: 1.9, arc: 0.9, color: '#ff713b', blurb: 'Fast. Fiery. Pointlessly dramatic.', impact: 'BOOM' },
