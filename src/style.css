@@ -7,7 +7,7 @@ button, input { font: inherit; }
 button { cursor: pointer; }
 .app-shell { position: relative; width: 100vw; height: 100dvh; min-height: 640px; overflow: hidden; background: #05070b; }
 #globe-stage { position: absolute; inset: 0; z-index: 0; }
-#city-map { position:absolute; inset:0; z-index:2; opacity:0; pointer-events:none; background:#0a1116; transition:opacity .45s ease; }.maplibregl-map { font-family:var(--mono); }.maplibregl-ctrl-attrib { background:rgba(4,10,16,.72)!important; color:#8ba7ae; }.maplibregl-ctrl-attrib a { color:var(--cyan); }.city-map.active { opacity:1; pointer-events:auto; }
+#city-map { position:absolute; inset:0; z-index:2; opacity:0; pointer-events:none; background:#0a1116; transition:opacity .45s ease; }.maplibregl-map { font-family:var(--mono); }.maplibregl-ctrl-attrib { background:rgba(4,10,16,.72)!important; color:#8ba7ae; }.maplibregl-ctrl-attrib a { color:var(--cyan); }#city-map.active { opacity:1; pointer-events:auto; }
 #globe-stage canvas { display: block; }
 .scanlines { position: absolute; inset: 0; pointer-events: none; z-index: 1; opacity: .12; background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(128, 224, 239, .06) 3px 4px); mix-blend-mode: screen; }
 .topbar, .target-card, .intel-panel, .search-wrap, .controls, .projectile-dock, .toast, .city-mode { z-index: 4; position: absolute; }
