@@ -71,7 +71,10 @@ const globe = Globe()(stage)
   .pointsData([])
   .pointLat('lat').pointLng('lng').pointColor(() => '#ff713b').pointAltitude(0.012).pointRadius(0.22)
   .onGlobeClick(({ lat, lng }) => setTarget(lat, lng, true));
-const vectorCoords = (lat, lng, altitude) => new THREE.Vector3(...globe.getCoords(lat, lng, altitude));
+const vectorCoords = (lat, lng, altitude) => {
+  const point = globe.getCoords(lat, lng, altitude);
+  return new THREE.Vector3(point.x, point.y, point.z);
+};
 
 globe.controls().autoRotate = true;
 globe.controls().autoRotateSpeed = 0.22;
