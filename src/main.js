@@ -224,7 +224,10 @@ function clearCityAttacks() {
 }
 
 function spawnCityImpact(x, y, color, label) {
-  const impact = document.createElement('div'); impact.className = 'city-impact'; impact.style.left = `${x}px`; impact.style.top = `${y}px`; impact.style.setProperty('--impact-color', color); impact.innerHTML = `<i></i><b>${label}</b>`; cityMapStage.appendChild(impact); setTimeout(() => impact.remove(), 1050);
+  const impact = document.createElement('div'); impact.className = 'city-impact'; impact.style.left = `${x}px`; impact.style.top = `${y}px`; impact.style.setProperty('--impact-color', color);
+  const sparks = Array.from({ length: 16 }, (_, index) => `<i class="explosion-spark" style="--angle:${index * 22.5}deg;--distance:${72 + (index % 4) * 18}px;--delay:${(index % 5) * 0.025}s"></i>`).join('');
+  impact.innerHTML = `<div class="explosion-smoke"></div><div class="explosion-ring ring-a"></div><div class="explosion-ring ring-b"></div><div class="explosion-ring ring-c"></div><div class="explosion-core"></div>${sparks}<b>${label}</b>`;
+  cityMapStage.appendChild(impact); setTimeout(() => impact.remove(), 1600);
 }
 
 function positionReticle(lat, lng) {
