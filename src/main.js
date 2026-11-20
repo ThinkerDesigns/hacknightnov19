@@ -117,8 +117,9 @@ function setTarget(lat, lng, launch = false, placeName = '') {
     globe.controls().autoRotate = false;
     globe.pointOfView({ lat, lng, altitude: 0.52 }, 1100);
   }
-  positionReticle(lat, lng);
-  if (placeName) setTimeout(() => positionReticle(lat, lng), 1150);
+  if (cityMapStage.classList.contains('active')) $('reticle').classList.remove('visible');
+  else positionReticle(lat, lng);
+  if (placeName && !cityMapStage.classList.contains('active')) setTimeout(() => positionReticle(lat, lng), 1150);
   if (launch) launchProjectile(selected.projectile, { lat, lng, placeName });
 }
 
@@ -135,7 +136,7 @@ function openCityMap(lat, lng, placeName) {
       const label = `MAP LOCK // ${target.lat.toFixed(5)}°, ${target.lng.toFixed(5)}°`;
       const lockedTarget = { lat: target.lat, lng: target.lng, placeName: label };
       setTarget(lockedTarget.lat, lockedTarget.lng, false, lockedTarget.placeName);
-      launchCityProjectile(selected.projectile, lockedTarget);
+      launchCityProjectile(selected.projectile, lockedTarget, event.point);
     });
   } else {
     cityMap.resize();
@@ -178,10 +179,10 @@ function ensureCityAttackRenderer() {
   cityAttackRenderer.setSize(width, height, false); cityAttackCamera.right = width; cityAttackCamera.bottom = height; cityAttackCamera.updateProjectionMatrix();
 }
 
-function launchCityProjectile(projectile, target) {
+function launchCityProjectile(projectile, target, clickedPoint = null) {
   ensureAudio(); ensureCityAttackRenderer();
   stats.launched += 1; $('launch-count').textContent = stats.launched;
-  const endPoint = projectMapPoint(target.lng, target.lat);
+  const endPoint = clickedPoint ? projectMapPoint(clickedPoint.x, clickedPoint.y, true) : projectMapPoint(target.lng, target.lat);
   const end = new THREE.Vector3(endPoint.x, endPoint.y, 0);
   const start = new THREE.Vector3(end.x + (Math.random() - .5) * 120, -150, 0);
   const mid = new THREE.Vector3((start.x + end.x) / 2 + (Math.random() - .5) * 160, end.y - 230, 0);
@@ -193,8 +194,8 @@ function launchCityProjectile(projectile, target) {
   addActivity(`${projectile.emoji} ${projectile.name} launched toward ${target.placeName}`);
 }
 
-function projectMapPoint(lng, lat) {
-  const point = cityMap.project([lng, lat]);
+function projectMapPoint(lng, lat, alreadyProjected = false) {
+  const point = alreadyProjected ? { x: lng, y: lat } : cityMap.project([lng, lat]);
   const container = cityMap.getContainer().getBoundingClientRect();
   const scaleX = cityMapStage.clientWidth / container.width;
   const scaleY = cityMapStage.clientHeight / container.height;
