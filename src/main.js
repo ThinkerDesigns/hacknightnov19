@@ -1,6 +1,6 @@
 import Globe from 'globe.gl';
 import * as THREE from 'three';
-import { Map } from 'maplibre-gl';
+import { Map as MapLibreMap } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './style.css';
 
@@ -119,7 +119,7 @@ function openCityMap(lat, lng, placeName) {
   $('city-mode').classList.add('active');
   cityMapStage.classList.add('active');
   if (!cityMap) {
-    cityMap = new Map({ container: cityMapStage, style: 'https://tiles.openfreemap.org/styles/liberty', center: [lng, lat], zoom: 18.8, pitch: 45, bearing: -18, attributionControl: true });
+    cityMap = new MapLibreMap({ container: cityMapStage, style: 'https://tiles.openfreemap.org/styles/liberty', center: [lng, lat], zoom: 18.8, pitch: 45, bearing: -18, attributionControl: true });
     cityMap.on('load', () => add3DBuildings(cityMap));
     cityMap.on('click', (event) => {
       const target = event.lngLat;
