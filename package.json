@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "globe.gl": "2.37.0",
+    "maplibre-gl": "5.18.0",
     "three": "0.169.0",
     "three-render-objects": "1.34.0",
     "vite": "^6.0.5"
