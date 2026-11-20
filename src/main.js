@@ -71,6 +71,7 @@ const globe = Globe()(stage)
   .pointsData([])
   .pointLat('lat').pointLng('lng').pointColor(() => '#ff713b').pointAltitude(0.012).pointRadius(0.22)
   .onGlobeClick(({ lat, lng }) => setTarget(lat, lng, true));
+const vectorCoords = (lat, lng, altitude) => new THREE.Vector3(...globe.getCoords(lat, lng, altitude));
 
 globe.controls().autoRotate = true;
 globe.controls().autoRotateSpeed = 0.22;
@@ -91,7 +92,7 @@ function setTarget(lat, lng, launch = false) {
   $('coords').innerHTML = `${lat.toFixed(3)}° ${lat >= 0 ? 'N' : 'S'} &nbsp; ${Math.abs(lng).toFixed(3)}° ${lng >= 0 ? 'E' : 'W'}<span>targeting lock acquired</span>`;
   $('target-name').textContent = city.name ? `${city.name.toUpperCase()} // ${selected.projectile.name.toUpperCase()}` : 'UNKNOWN SECTOR // RAW COORDINATES';
   $('target-bar-fill').style.width = '100%';
-  const pos = globe.getCoords(lat, lng, 0.045);
+  const pos = vectorCoords(lat, lng, 0.045);
   const projected = pos.clone().project(globe.camera());
   const rect = stage.getBoundingClientRect();
   const x = (projected.x * 0.5 + 0.5) * rect.width;
@@ -109,7 +110,7 @@ function launchProjectile(projectile, target) {
   const sprite = makeEmojiSprite(projectile.emoji, projectile.color);
   group.add(sprite); globe.scene().add(group);
   const start = getOrigin(projectile);
-  const end = globe.getCoords(target.lat, target.lng, 0.065);
+  const end = vectorCoords(target.lat, target.lng, 0.065);
   const mid = start.clone().lerp(end, 0.5).normalize().multiplyScalar(100 + projectile.arc * 80);
   const trailMaterial = new THREE.LineBasicMaterial({ color: projectile.color, transparent: true, opacity: 0.7 });
   const trailGeometry = new THREE.BufferGeometry().setFromPoints([start.clone(), start.clone()]);
@@ -121,7 +122,7 @@ function launchProjectile(projectile, target) {
 
 function getOrigin(projectile) {
   if (selected.origin === 'previous' && stats.activity.length) {
-    const recent = selected.target || { lat: 0, lng: 0 }; return globe.getCoords(recent.lat, recent.lng, 2.6);
+    const recent = selected.target || { lat: 0, lng: 0 }; return vectorCoords(recent.lat, recent.lng, 2.6);
   }
   if (selected.origin === 'random') return new THREE.Vector3((Math.random() - .5) * 260, 80 + Math.random() * 100, (Math.random() - .5) * 260);
   return new THREE.Vector3(0, 270, 0);
@@ -155,7 +156,7 @@ function impact(item) {
 }
 
 function spawnParticles(target, color) {
-  const origin = globe.getCoords(target.lat, target.lng, 0.12); const points = [];
+  const origin = vectorCoords(target.lat, target.lng, 0.12); const points = [];
   for (let i = 0; i < 14; i++) { const p = origin.clone().add(new THREE.Vector3((Math.random() - .5) * 10, Math.random() * 10, (Math.random() - .5) * 10)); points.push(p); }
   const geometry = new THREE.BufferGeometry().setFromPoints(points); const material = new THREE.PointsMaterial({ color, size: 3.8, transparent: true, opacity: 1, depthWrite: false }); const particles = new THREE.Points(geometry, material); globe.scene().add(particles);
   setTimeout(() => { globe.scene().remove(particles); geometry.dispose(); material.dispose(); }, 680);
