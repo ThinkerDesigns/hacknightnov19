@@ -126,6 +126,7 @@ function openCityMap(lat, lng, placeName) {
   $('city-mode-name').textContent = placeName.toUpperCase();
   $('city-mode').classList.add('active');
   cityMapStage.classList.add('active');
+  $('reticle').classList.remove('visible');
   if (!cityMap) {
     cityMap = new MapLibreMap({ container: cityMapStage, style: 'https://tiles.openfreemap.org/styles/dark', center: [lng, lat], zoom: 18.8, pitch: 45, bearing: -18, attributionControl: true });
     cityMap.on('load', () => { addSatelliteImagery(cityMap); add3DBuildings(cityMap); ensureCityAttackRenderer(); });
@@ -150,12 +151,13 @@ function addSatelliteImagery(map) {
 
 function add3DBuildings(map) {
   if (map.getLayer('orbital-3d-buildings') || !map.getSource('openmaptiles')) return;
-  map.addLayer({ id: 'orbital-3d-buildings', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14, paint: { 'fill-extrusion-color': '#29465a', 'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 10], 'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0], 'fill-extrusion-opacity': 0.88 } });
+  map.addLayer({ id: 'orbital-3d-buildings', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14, paint: { 'fill-extrusion-color': '#60798c', 'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 10], 'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0], 'fill-extrusion-opacity': 0.43, 'fill-extrusion-vertical-gradient': true } });
 }
 
 function returnToOrbit() {
   cityMapStage.classList.remove('active');
   $('city-mode').classList.remove('active');
+  if (selected.target) positionReticle(selected.target.lat, selected.target.lng);
   if (cityMap) cityMap.resize();
 }
 
@@ -179,7 +181,7 @@ function ensureCityAttackRenderer() {
 function launchCityProjectile(projectile, target) {
   ensureAudio(); ensureCityAttackRenderer();
   stats.launched += 1; $('launch-count').textContent = stats.launched;
-  const endPoint = cityMap.project([target.lng, target.lat]);
+  const endPoint = projectMapPoint(target.lng, target.lat);
   const end = new THREE.Vector3(endPoint.x, endPoint.y, 0);
   const start = new THREE.Vector3(end.x + (Math.random() - .5) * 120, -150, 0);
   const mid = new THREE.Vector3((start.x + end.x) / 2 + (Math.random() - .5) * 160, end.y - 230, 0);
@@ -189,6 +191,14 @@ function launchCityProjectile(projectile, target) {
   cityAttack = { model, trail, trailGeometry, trailMaterial, start, mid, end, target, projectile, t: 0, duration: Math.max(.8, 1.55 / projectile.speed) };
   playSound(projectile.id === 'chicken' ? 'squeak' : 'launch');
   addActivity(`${projectile.emoji} ${projectile.name} launched toward ${target.placeName}`);
+}
+
+function projectMapPoint(lng, lat) {
+  const point = cityMap.project([lng, lat]);
+  const container = cityMap.getContainer().getBoundingClientRect();
+  const scaleX = cityMapStage.clientWidth / container.width;
+  const scaleY = cityMapStage.clientHeight / container.height;
+  return new THREE.Vector3(point.x * scaleX, point.y * scaleY, 0);
 }
 
 function tickCityAttack(delta) {
@@ -331,10 +341,11 @@ $('clear-btn').onclick = () => { active.splice(0).forEach((item) => { globe.scen
 $('chaos-btn').onclick = () => { if (chaosTimer) return; let remaining = 10; $('chaos-status').textContent = `${remaining}s`; chaosTimer = setInterval(() => { remaining -= 1; $('chaos-status').textContent = remaining ? `${remaining}s` : 'STANDBY'; if (remaining <= 0) { clearInterval(chaosTimer); chaosTimer = null; showToast('CHAOS COMPLETE // VERY LITTLE WAS LEARNED'); return; } const p = PROJECTILES[Math.floor(Math.random() * PROJECTILES.length)]; const lat = Math.random() * 140 - 70; const lng = Math.random() * 360 - 180; launchProjectile(p, { lat, lng }); }, 900); };
 $('search-btn').onclick = () => searchPlace($('search-input').value.trim());
 $('search-input').onkeydown = (event) => { if (event.key === 'Enter') searchPlace($('search-input').value.trim()); if (event.key === 'Escape') hideSuggestions(); };
-$('search-input').oninput = () => { const query = $('search-input').value.trim(); clearTimeout(searchTimer); if (query.length < 3) return hideSuggestions(); searchTimer = setTimeout(() => fetchSuggestions(query), 260); };
+$('search-input').onfocus = () => { if ($('search-input').dataset.locked) { $('search-input').value = ''; $('search-input').placeholder = 'Search another address…'; delete $('search-input').dataset.locked; $('search-result').textContent = ''; } };
+$('search-input').oninput = () => { const query = $('search-input').value.trim(); delete $('search-input').dataset.locked; $('search-input').placeholder = 'Search an address or place…'; clearTimeout(searchTimer); if (query.length < 3) return hideSuggestions(); searchTimer = setTimeout(() => fetchSuggestions(query), 260); };
 async function fetchSuggestions(query) { const requestId = ++searchRequest; const localPlace = localPlaceFor(query); if (localPlace) return renderSuggestions([localPlace]); renderSearchStatus('SEARCHING…'); try { const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&dedupe=1&accept-language=en&q=${encodeURIComponent(query)}`); const results = await response.json(); if (requestId !== searchRequest) return; renderSuggestions(results); } catch { if (requestId === searchRequest) renderSearchStatus('NO SIGNAL — TRY ANOTHER PLACE'); } }
 function renderSuggestions(results) { const suggestions = $('search-suggestions'); if (!results.length) { suggestions.innerHTML = `<div class="suggestion-empty">NO MATCHES — TRY A STREET, CITY, OR LANDMARK</div>`; suggestions.classList.add('open'); return; } suggestions.innerHTML = results.map((hit, index) => `<button class="suggestion" data-result-index="${index}" role="option"><b>${hit.display_name.split(',').slice(0, 2).join(', ')}</b><small>${hit.type || 'place'} · ${Number(hit.lat).toFixed(3)}°, ${Number(hit.lon).toFixed(3)}°</small></button>`).join(''); suggestions.classList.add('open'); suggestions.querySelectorAll('.suggestion').forEach((button) => { button.onclick = () => focusSearchResult(results[Number(button.dataset.resultIndex)]); }); $('search-result').textContent = ''; }
-function focusSearchResult(hit) { const label = hit.display_name.split(',').slice(0, 3).join(', '); const lat = Number(hit.lat); const lng = Number(hit.lon); $('search-input').value = label; hideSuggestions(); $('search-result').textContent = '3D LOCK // EXACT COORDINATES'; setTarget(lat, lng, false, label); openCityMap(lat, lng, label); showToast(`LOCATION LOCKED // ${label.toUpperCase()}`); }
+function focusSearchResult(hit) { const label = hit.display_name.split(',').slice(0, 3).join(', '); const lat = Number(hit.lat); const lng = Number(hit.lon); $('search-input').value = ''; $('search-input').placeholder = label; $('search-input').dataset.locked = 'true'; hideSuggestions(); $('search-result').textContent = '3D LOCK // EXACT COORDINATES'; setTarget(lat, lng, false, label); openCityMap(lat, lng, label); showToast(`LOCATION LOCKED // ${label.toUpperCase()}`); }
 function hideSuggestions() { $('search-suggestions').classList.remove('open'); }
 function renderSearchStatus(text) { $('search-result').textContent = text; hideSuggestions(); }
 function localPlaceFor(query) { const normalized = query.toLowerCase(); return LOCAL_PLACES.find((place) => place.keywords.every((keyword) => normalized.includes(keyword))) || null; }
