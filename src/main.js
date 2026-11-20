@@ -70,10 +70,7 @@ const globe = Globe()(stage)
   .ringRepeatPeriod(0)
   .pointsData([])
   .pointLat('lat').pointLng('lng').pointColor(() => '#ff713b').pointAltitude(0.012).pointRadius(0.22)
-  .onGlobeClick(({ lat, lng }) => setTarget(lat, lng, true))
-  .onGlobeHover((point) => {
-    if (!point) { $('reticle').classList.remove('visible'); return; }
-  });
+  .onGlobeClick(({ lat, lng }) => setTarget(lat, lng, true));
 
 globe.controls().autoRotate = true;
 globe.controls().autoRotateSpeed = 0.22;
