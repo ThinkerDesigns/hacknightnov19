@@ -57,7 +57,7 @@ let chaosTimer;
 let searchTimer;
 let searchRequest = 0;
 let cityMap;
-let cityAttack;
+const cityAttacks = [];
 let cityAttackRenderer;
 let cityAttackScene;
 let cityAttackCamera;
@@ -124,6 +124,7 @@ function setTarget(lat, lng, launch = false, placeName = '') {
 }
 
 function openCityMap(lat, lng, placeName) {
+  clearCityAttacks();
   $('city-mode-name').textContent = placeName.toUpperCase();
   $('city-mode').classList.add('active');
   cityMapStage.classList.add('active');
@@ -189,7 +190,7 @@ function launchCityProjectile(projectile, target, clickedPoint = null) {
   const model = createPayloadModel(projectile); model.scale.multiplyScalar(2.25); cityAttackScene.add(model);
   const trailMaterial = new THREE.LineBasicMaterial({ color: projectile.color, transparent: true, opacity: .75 });
   const trailGeometry = new THREE.BufferGeometry().setFromPoints([start.clone(), start.clone()]); const trail = new THREE.Line(trailGeometry, trailMaterial); cityAttackScene.add(trail);
-  cityAttack = { model, trail, trailGeometry, trailMaterial, start, mid, end, target, projectile, t: 0, duration: Math.max(.8, 1.55 / projectile.speed) };
+  cityAttacks.push({ model, trail, trailGeometry, trailMaterial, start, mid, end, target, projectile, t: 0, duration: Math.max(.8, 1.55 / projectile.speed) });
   playSound(projectile.id === 'chicken' ? 'squeak' : 'launch');
   addActivity(`${projectile.emoji} ${projectile.name} launched toward ${target.placeName}`);
 }
@@ -203,17 +204,23 @@ function projectMapPoint(lng, lat, alreadyProjected = false) {
 }
 
 function tickCityAttack(delta) {
-  if (!cityAttack) return;
-  const item = cityAttack; item.t += delta / item.duration; const t = Math.min(item.t, 1); const eased = t * t * (3 - 2 * t);
-  const a = item.start.clone().multiplyScalar((1 - eased) ** 2); const b = item.mid.clone().multiplyScalar(2 * (1 - eased) * eased); const c = item.end.clone().multiplyScalar(eased ** 2); const pos = a.add(b).add(c);
-  item.model.position.copy(pos); item.model.rotation.x += delta * 3.2; item.model.rotation.y += delta * 4.1; item.trailGeometry.setFromPoints([item.start.clone().lerp(pos, .86), pos]);
-  if (t >= 1) finishCityAttack(item);
+  cityAttacks.slice().forEach((item) => {
+    item.t += delta / item.duration; const t = Math.min(item.t, 1); const eased = t * t * (3 - 2 * t);
+    const a = item.start.clone().multiplyScalar((1 - eased) ** 2); const b = item.mid.clone().multiplyScalar(2 * (1 - eased) * eased); const c = item.end.clone().multiplyScalar(eased ** 2); const pos = a.add(b).add(c);
+    item.model.position.copy(pos); item.model.rotation.x += delta * 3.2; item.model.rotation.y += delta * 4.1; item.trailGeometry.setFromPoints([item.start.clone().lerp(pos, .86), pos]);
+    if (t >= 1) finishCityAttack(item);
+  });
   cityAttackRenderer.render(cityAttackScene, cityAttackCamera);
 }
 
 function finishCityAttack(item) {
-  cityAttackScene.remove(item.model, item.trail); disposeObject3D(item.model); item.trailGeometry.dispose(); item.trailMaterial.dispose(); cityAttack = null;
+  cityAttackScene.remove(item.model, item.trail); disposeObject3D(item.model); item.trailGeometry.dispose(); item.trailMaterial.dispose(); cityAttacks.splice(cityAttacks.indexOf(item), 1);
   spawnCityImpact(item.end.x, item.end.y, item.projectile.color, item.projectile.impact); recordImpact(item.target, item.projectile, true);
+}
+
+function clearCityAttacks() {
+  cityAttacks.splice(0).forEach((item) => { if (cityAttackScene) cityAttackScene.remove(item.model, item.trail); disposeObject3D(item.model); item.trailGeometry.dispose(); item.trailMaterial.dispose(); });
+  cityMapStage.querySelectorAll('.city-impact').forEach((impact) => impact.remove());
 }
 
 function spawnCityImpact(x, y, color, label) {
@@ -338,7 +345,7 @@ $('follow-btn').onclick = () => { selected.follow = !selected.follow; $('follow-
 $('reset-btn').onclick = () => { globe.pointOfView({ lat: 22, lng: 12, altitude: 2.35 }, 900); globe.controls().autoRotate = true; };
 $('return-orbit').onclick = returnToOrbit;
 $('origin-btn').onclick = () => { const options = ['orbital', 'previous', 'random']; selected.origin = options[(options.indexOf(selected.origin) + 1) % options.length]; $('origin-btn').innerHTML = `↟ ORIGIN: <b>${selected.origin.toUpperCase()}</b>`; };
-$('clear-btn').onclick = () => { active.splice(0).forEach((item) => { globe.scene().remove(item.group, item.trail); disposeObject3D(item.group); item.trailGeometry.dispose(); item.trailMaterial.dispose(); }); globe.ringsData([]); stats.craters = []; refreshMarkers(); showToast('FIELD CLEARED // NO MISCHIEF REMAINS'); };
+$('clear-btn').onclick = () => { active.splice(0).forEach((item) => { globe.scene().remove(item.group, item.trail); disposeObject3D(item.group); item.trailGeometry.dispose(); item.trailMaterial.dispose(); }); clearCityAttacks(); globe.ringsData([]); stats.craters = []; refreshMarkers(); showToast('FIELD CLEARED // NO MISCHIEF REMAINS'); };
 $('chaos-btn').onclick = () => { if (chaosTimer) return; let remaining = 10; $('chaos-status').textContent = `${remaining}s`; chaosTimer = setInterval(() => { remaining -= 1; $('chaos-status').textContent = remaining ? `${remaining}s` : 'STANDBY'; if (remaining <= 0) { clearInterval(chaosTimer); chaosTimer = null; showToast('CHAOS COMPLETE // VERY LITTLE WAS LEARNED'); return; } const p = PROJECTILES[Math.floor(Math.random() * PROJECTILES.length)]; const lat = Math.random() * 140 - 70; const lng = Math.random() * 360 - 180; launchProjectile(p, { lat, lng }); }, 900); };
 $('search-btn').onclick = () => searchPlace($('search-input').value.trim());
 $('search-input').onkeydown = (event) => { if (event.key === 'Enter') searchPlace($('search-input').value.trim()); if (event.key === 'Escape') hideSuggestions(); };
