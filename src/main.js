@@ -21,6 +21,10 @@ const cities = [
   ['Mexico City', 19.4326, -99.1332], ['Singapore', 1.3521, 103.8198], ['Paris', 48.8566, 2.3522], ['Honolulu', 21.3069, -157.8583]
 ];
 
+const LOCAL_PLACES = [
+  { keywords: ['walker hall', 'uc davis'], display_name: 'Walker Hall, UC Davis, 300 Peter J. Shields Avenue, Davis, CA', lat: 38.539629, lon: -121.750795, type: 'building' }
+];
+
 const app = document.querySelector('#app');
 app.innerHTML = `
   <div class="app-shell">
@@ -262,12 +266,13 @@ $('chaos-btn').onclick = () => { if (chaosTimer) return; let remaining = 10; $('
 $('search-btn').onclick = () => searchPlace($('search-input').value.trim());
 $('search-input').onkeydown = (event) => { if (event.key === 'Enter') searchPlace($('search-input').value.trim()); if (event.key === 'Escape') hideSuggestions(); };
 $('search-input').oninput = () => { const query = $('search-input').value.trim(); clearTimeout(searchTimer); if (query.length < 3) return hideSuggestions(); searchTimer = setTimeout(() => fetchSuggestions(query), 260); };
-async function fetchSuggestions(query) { const requestId = ++searchRequest; renderSearchStatus('SEARCHING…'); try { const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&dedupe=1&accept-language=en&q=${encodeURIComponent(query)}`); const results = await response.json(); if (requestId !== searchRequest) return; renderSuggestions(results); } catch { if (requestId === searchRequest) renderSearchStatus('NO SIGNAL — TRY ANOTHER PLACE'); } }
+async function fetchSuggestions(query) { const requestId = ++searchRequest; const localPlace = localPlaceFor(query); if (localPlace) return renderSuggestions([localPlace]); renderSearchStatus('SEARCHING…'); try { const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&dedupe=1&accept-language=en&q=${encodeURIComponent(query)}`); const results = await response.json(); if (requestId !== searchRequest) return; renderSuggestions(results); } catch { if (requestId === searchRequest) renderSearchStatus('NO SIGNAL — TRY ANOTHER PLACE'); } }
 function renderSuggestions(results) { const suggestions = $('search-suggestions'); if (!results.length) { suggestions.innerHTML = `<div class="suggestion-empty">NO MATCHES — TRY A STREET, CITY, OR LANDMARK</div>`; suggestions.classList.add('open'); return; } suggestions.innerHTML = results.map((hit, index) => `<button class="suggestion" data-result-index="${index}" role="option"><b>${hit.display_name.split(',').slice(0, 2).join(', ')}</b><small>${hit.type || 'place'} · ${Number(hit.lat).toFixed(3)}°, ${Number(hit.lon).toFixed(3)}°</small></button>`).join(''); suggestions.classList.add('open'); suggestions.querySelectorAll('.suggestion').forEach((button) => { button.onclick = () => focusSearchResult(results[Number(button.dataset.resultIndex)]); }); $('search-result').textContent = ''; }
 function focusSearchResult(hit) { const label = hit.display_name.split(',').slice(0, 3).join(', '); const lat = Number(hit.lat); const lng = Number(hit.lon); $('search-input').value = label; hideSuggestions(); $('search-result').textContent = '3D LOCK // EXACT COORDINATES'; setTarget(lat, lng, false, label); openCityMap(lat, lng, label); showToast(`LOCATION LOCKED // ${label.toUpperCase()}`); }
 function hideSuggestions() { $('search-suggestions').classList.remove('open'); }
 function renderSearchStatus(text) { $('search-result').textContent = text; hideSuggestions(); }
-async function searchPlace(query) { if (!query) return; renderSearchStatus('LOCATING…'); try { const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&dedupe=1&accept-language=en&q=${encodeURIComponent(query)}`); const results = await response.json(); if (!results.length) throw new Error('not found'); focusSearchResult(results[0]); } catch { renderSearchStatus('NO SIGNAL — TRY ANOTHER PLACE'); } }
+function localPlaceFor(query) { const normalized = query.toLowerCase(); return LOCAL_PLACES.find((place) => place.keywords.every((keyword) => normalized.includes(keyword))) || null; }
+async function searchPlace(query) { if (!query) return; const localPlace = localPlaceFor(query); if (localPlace) return focusSearchResult(localPlace); renderSearchStatus('LOCATING…'); try { const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&dedupe=1&accept-language=en&q=${encodeURIComponent(query)}`); const results = await response.json(); if (!results.length) throw new Error('not found'); focusSearchResult(results[0]); } catch { renderSearchStatus('NO SIGNAL — TRY ANOTHER PLACE'); } }
 
 window.addEventListener('keydown', (event) => { const p = PROJECTILES.find((item) => item.hotkey === event.key); if (p) selectProjectile(p.id); });
 let previous = performance.now();
